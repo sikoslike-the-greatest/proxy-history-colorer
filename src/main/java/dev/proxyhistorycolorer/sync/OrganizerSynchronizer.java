@@ -10,6 +10,7 @@ import dev.proxyhistorycolorer.store.EndpointRegistry;
 import dev.proxyhistorycolorer.store.ProjectStore;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Executors;
@@ -52,8 +53,16 @@ public final class OrganizerSynchronizer implements AutoCloseable {
     }
 
     void sync() {
+        Map<EndpointKey, EndpointAnnotation> current = buildSnapshot(organizer.items());
+        if (registry.replace(current)) {
+            projectStore.save(current);
+            logging.logToOutput("Synchronized " + current.size() + " commented endpoints from Organizer");
+        }
+    }
+
+    static Map<EndpointKey, EndpointAnnotation> buildSnapshot(List<OrganizerItem> items) {
         Map<EndpointKey, EndpointAnnotation> current = new HashMap<>();
-        for (OrganizerItem item : organizer.items()) {
+        for (OrganizerItem item : items) {
             if (!item.annotations().hasNotes()) {
                 continue;
             }
@@ -70,11 +79,7 @@ public final class OrganizerSynchronizer implements AutoCloseable {
             EndpointAnnotation annotation = new EndpointAnnotation(notes, color, item.id());
             current.merge(key, annotation, OrganizerSynchronizer::newest);
         }
-
-        if (registry.replace(current)) {
-            projectStore.save(current);
-            logging.logToOutput("Synchronized " + current.size() + " commented endpoints from Organizer");
-        }
+        return Map.copyOf(current);
     }
 
     @Override
