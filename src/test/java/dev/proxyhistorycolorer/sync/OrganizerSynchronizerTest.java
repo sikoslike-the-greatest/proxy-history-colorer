@@ -1,0 +1,108 @@
+package dev.proxyhistorycolorer.sync;
+
+import burp.api.montoya.core.Annotations;
+import burp.api.montoya.core.HighlightColor;
+import burp.api.montoya.http.message.requests.HttpRequest;
+import burp.api.montoya.organizer.OrganizerItem;
+import dev.proxyhistorycolorer.model.EndpointAnnotation;
+import dev.proxyhistorycolorer.model.EndpointKey;
+import org.junit.jupiter.api.Test;
+
+import java.lang.reflect.Proxy;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+class OrganizerSynchronizerTest {
+    @Test
+    void newestOrganizerItemWinsForDuplicateEndpoint() {
+        OrganizerItem older = item(
+                3,
+                "GET",
+                "https://example.com/api/users?page=1",
+                "Initial notes",
+                HighlightColor.RED
+        );
+        OrganizerItem newer = item(
+                8,
+                "GET",
+                "https://example.com/api/users?page=2",
+                "Tested successfully",
+                HighlightColor.GREEN
+        );
+
+        Map<EndpointKey, EndpointAnnotation> snapshot =
+                OrganizerSynchronizer.buildSnapshot(List.of(newer, older));
+
+        assertEquals(
+                new EndpointAnnotation("Tested successfully", HighlightColor.GREEN, 8),
+                snapshot.get(EndpointKey.from("GET", "https://example.com/api/users"))
+        );
+    }
+
+    @Test
+    void uncoloredCommentedItemFallsBackToGray() {
+        OrganizerItem item = item(
+                1,
+                "POST",
+                "http://example.com/login",
+                "Needs testing",
+                null
+        );
+
+        EndpointAnnotation annotation = OrganizerSynchronizer.buildSnapshot(List.of(item))
+                .get(EndpointKey.from("POST", "http://example.com/login"));
+
+        assertEquals(HighlightColor.GRAY, annotation.color());
+        assertEquals("Needs testing", annotation.notes());
+    }
+
+    @Test
+    void ignoresOrganizerItemsWithoutNotes() {
+        OrganizerItem item = item(1, "GET", "https://example.com/", "", HighlightColor.BLUE);
+
+        assertEquals(Map.of(), OrganizerSynchronizer.buildSnapshot(List.of(item)));
+    }
+
+    private static OrganizerItem item(
+            int id,
+            String method,
+            String url,
+            String notes,
+            HighlightColor color
+    ) {
+        HttpRequest request = proxy(HttpRequest.class, invocation -> switch (invocation) {
+            case "method" -> method;
+            case "url" -> url;
+            default -> null;
+        });
+        Annotations annotations = proxy(Annotations.class, invocation -> switch (invocation) {
+            case "hasNotes" -> !notes.isBlank();
+            case "notes" -> notes;
+            case "hasHighlightColor" -> color != null;
+            case "highlightColor" -> color;
+            default -> null;
+        });
+        return proxy(OrganizerItem.class, invocation -> switch (invocation) {
+            case "id" -> id;
+            case "request" -> request;
+            case "annotations" -> annotations;
+            default -> null;
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T proxy(Class<T> type, MethodResult result) {
+        return (T) Proxy.newProxyInstance(
+                type.getClassLoader(),
+                new Class<?>[]{type},
+                (proxy, method, arguments) -> result.value(method.getName())
+        );
+    }
+
+    @FunctionalInterface
+    private interface MethodResult {
+        Object value(String methodName);
+    }
+}
