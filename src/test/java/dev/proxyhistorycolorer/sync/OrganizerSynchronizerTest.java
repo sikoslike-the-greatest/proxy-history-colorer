@@ -2,6 +2,7 @@ package dev.proxyhistorycolorer.sync;
 
 import burp.api.montoya.core.Annotations;
 import burp.api.montoya.core.HighlightColor;
+import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.organizer.OrganizerItem;
 import dev.proxyhistorycolorer.model.EndpointAnnotation;
@@ -9,6 +10,7 @@ import dev.proxyhistorycolorer.model.EndpointKey;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
@@ -72,9 +74,20 @@ class OrganizerSynchronizerTest {
             String notes,
             HighlightColor color
     ) {
+        URI uri = URI.create(url);
+        boolean secure = "https".equalsIgnoreCase(uri.getScheme());
+        int port = uri.getPort() == -1 ? (secure ? 443 : 80) : uri.getPort();
+        HttpService service = proxy(HttpService.class, invocation -> switch (invocation) {
+            case "host" -> uri.getHost();
+            case "port" -> port;
+            case "secure" -> secure;
+            default -> null;
+        });
         HttpRequest request = proxy(HttpRequest.class, invocation -> switch (invocation) {
             case "method" -> method;
-            case "url" -> url;
+            case "url" -> uri.getRawPath();
+            case "httpService" -> service;
+            case "pathWithoutQuery" -> uri.getRawPath();
             default -> null;
         });
         Annotations annotations = proxy(Annotations.class, invocation -> switch (invocation) {

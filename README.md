@@ -20,7 +20,8 @@ Query string и body не учитываются. Поэтому `GET /users?pag
 `GET /users?page=2` считаются одним эндпоинтом, а `GET /users` и `POST /users` —
 разными.
 
-Расширение каждые две секунды читает Organizer:
+Расширение каждые две секунды читает все записи Organizer независимо от того,
+были они отправлены из Proxy, Repeater, Scanner или другого инструмента:
 
 - элементы без Notes игнорируются;
 - Notes и установленный highlight color переносятся в новые совпавшие запросы;
@@ -40,7 +41,7 @@ Organizer остается источником истины: удаленный
 ./gradlew clean test build
 ```
 
-JAR будет создан в `build/libs/proxy-history-colorer-0.1.0.jar`.
+JAR будет создан в `build/libs/proxy-history-colorer-0.1.1.jar`.
 
 ## Установка
 
