@@ -1,5 +1,6 @@
 package dev.proxyhistorycolorer.model;
 
+import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.message.requests.HttpRequest;
 
 import java.net.URI;
@@ -22,11 +23,15 @@ public record EndpointKey(String method, String scheme, String host, int port, S
 
     public static EndpointKey from(HttpRequest request) {
         Objects.requireNonNull(request, "request");
-        URI uri = URI.create(request.url());
-        String scheme = requireUriPart(uri.getScheme(), "scheme", request.url());
-        String host = requireUriPart(uri.getHost(), "host", request.url());
-        int port = uri.getPort() == -1 ? defaultPort(scheme) : uri.getPort();
-        return new EndpointKey(request.method(), scheme, host, port, uri.getRawPath());
+        HttpService service = Objects.requireNonNull(request.httpService(), "request.httpService()");
+        String scheme = service.secure() ? "https" : "http";
+        return new EndpointKey(
+                request.method(),
+                scheme,
+                service.host(),
+                service.port(),
+                request.pathWithoutQuery()
+        );
     }
 
     public static EndpointKey from(String method, String url) {
