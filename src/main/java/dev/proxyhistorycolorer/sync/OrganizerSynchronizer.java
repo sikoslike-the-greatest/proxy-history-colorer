@@ -1,5 +1,6 @@
 package dev.proxyhistorycolorer.sync;
 
+import burp.api.montoya.core.Annotations;
 import burp.api.montoya.core.HighlightColor;
 import burp.api.montoya.logging.Logging;
 import burp.api.montoya.organizer.Organizer;
@@ -16,9 +17,15 @@ import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 public final class OrganizerSynchronizer implements AutoCloseable {
     private static final long SYNC_INTERVAL_SECONDS = 2;
+    private static final String SUPERSEDED_PREFIX =
+            "[Proxy History Colorer: superseded by Organizer item #";
+    private static final Pattern SUPERSEDED_SUFFIX = Pattern.compile(
+            "\\R\\R\\[Proxy History Colorer: superseded by Organizer item #\\d+\\]\\s*$"
+    );
 
     private final Organizer organizer;
     private final EndpointRegistry registry;
@@ -83,11 +90,11 @@ public final class OrganizerSynchronizer implements AutoCloseable {
                 current.put(key, annotation);
                 selectedItems.put(key, item);
             } else if (annotation.organizerItemId() > selected.organizerItemId()) {
-                markAsSuperseded(selectedItems.get(key));
+                markAsSuperseded(selectedItems.get(key), annotation.organizerItemId());
                 current.put(key, annotation);
                 selectedItems.put(key, item);
             } else {
-                markAsSuperseded(item);
+                markAsSuperseded(item, selected.organizerItemId());
             }
         }
         return Map.copyOf(current);
@@ -106,10 +113,18 @@ public final class OrganizerSynchronizer implements AutoCloseable {
         }
     }
 
-    private static void markAsSuperseded(OrganizerItem item) {
-        if (!item.annotations().hasHighlightColor()
-                || item.annotations().highlightColor() != HighlightColor.PINK) {
-            item.annotations().setHighlightColor(HighlightColor.PINK);
+    private static void markAsSuperseded(OrganizerItem item, int newestItemId) {
+        Annotations annotations = item.annotations();
+        if (!annotations.hasHighlightColor()
+                || annotations.highlightColor() != HighlightColor.PINK) {
+            annotations.setHighlightColor(HighlightColor.PINK);
+        }
+
+        String notes = annotations.notes();
+        String marker = SUPERSEDED_PREFIX + newestItemId + ']';
+        String updatedNotes = SUPERSEDED_SUFFIX.matcher(notes).replaceFirst("") + "\n\n" + marker;
+        if (!notes.equals(updatedNotes)) {
+            annotations.setNotes(updatedNotes);
         }
     }
 }

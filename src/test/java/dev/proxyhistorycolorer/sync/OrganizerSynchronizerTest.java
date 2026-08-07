@@ -20,25 +20,28 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class OrganizerSynchronizerTest {
     @Test
     void newestOrganizerItemWinsForDuplicateEndpoint() {
+        AtomicReference<String> olderNotes = new AtomicReference<>("Initial notes");
+        AtomicReference<String> newerNotes = new AtomicReference<>("Tested successfully");
         AtomicReference<HighlightColor> olderColor = new AtomicReference<>(HighlightColor.RED);
         AtomicReference<HighlightColor> newerColor = new AtomicReference<>(HighlightColor.GREEN);
-        OrganizerItem older = itemWithMutableColor(
+        OrganizerItem older = itemWithMutableAnnotations(
                 3,
                 "GET",
                 "https://example.com/api/users?page=1",
-                "Initial notes",
+                olderNotes,
                 olderColor
         );
-        OrganizerItem newer = itemWithMutableColor(
+        OrganizerItem newer = itemWithMutableAnnotations(
                 8,
                 "GET",
                 "https://example.com/api/users?page=2",
-                "Tested successfully",
+                newerNotes,
                 newerColor
         );
 
         Map<EndpointKey, EndpointAnnotation> snapshot =
                 OrganizerSynchronizer.buildSnapshot(List.of(older, newer));
+        OrganizerSynchronizer.buildSnapshot(List.of(older, newer));
 
         assertEquals(
                 new EndpointAnnotation("Tested successfully", HighlightColor.GREEN, 8),
@@ -46,6 +49,11 @@ class OrganizerSynchronizerTest {
         );
         assertEquals(HighlightColor.PINK, olderColor.get());
         assertEquals(HighlightColor.GREEN, newerColor.get());
+        assertEquals(
+                "Initial notes\n\n[Proxy History Colorer: superseded by Organizer item #8]",
+                olderNotes.get()
+        );
+        assertEquals("Tested successfully", newerNotes.get());
     }
 
     @Test
@@ -79,14 +87,20 @@ class OrganizerSynchronizerTest {
             String notes,
             HighlightColor color
     ) {
-        return itemWithMutableColor(id, method, url, notes, new AtomicReference<>(color));
+        return itemWithMutableAnnotations(
+                id,
+                method,
+                url,
+                new AtomicReference<>(notes),
+                new AtomicReference<>(color)
+        );
     }
 
-    private static OrganizerItem itemWithMutableColor(
+    private static OrganizerItem itemWithMutableAnnotations(
             int id,
             String method,
             String url,
-            String notes,
+            AtomicReference<String> notes,
             AtomicReference<HighlightColor> color
     ) {
         URI uri = URI.create(url);
@@ -106,8 +120,12 @@ class OrganizerSynchronizerTest {
             default -> null;
         });
         Annotations annotations = proxy(Annotations.class, (invocation, arguments) -> switch (invocation) {
-            case "hasNotes" -> !notes.isBlank();
-            case "notes" -> notes;
+            case "hasNotes" -> !notes.get().isBlank();
+            case "notes" -> notes.get();
+            case "setNotes" -> {
+                notes.set((String) arguments[0]);
+                yield null;
+            }
             case "hasHighlightColor" -> color.get() != null;
             case "highlightColor" -> color.get();
             case "setHighlightColor" -> {
