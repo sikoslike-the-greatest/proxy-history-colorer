@@ -43,7 +43,7 @@ Organizer остается источником истины: удаленный
 ./gradlew clean test build
 ```
 
-JAR будет создан в `build/libs/proxy-history-colorer-0.2.0.jar`.
+JAR будет создан в `build/libs/proxy-history-colorer-0.2.1.jar`.
 
 ## Установка
 
