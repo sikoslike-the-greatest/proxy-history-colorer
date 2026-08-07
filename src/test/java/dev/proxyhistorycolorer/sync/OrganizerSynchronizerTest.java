@@ -13,34 +13,39 @@ import java.lang.reflect.Proxy;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class OrganizerSynchronizerTest {
     @Test
     void newestOrganizerItemWinsForDuplicateEndpoint() {
-        OrganizerItem older = item(
+        AtomicReference<HighlightColor> olderColor = new AtomicReference<>(HighlightColor.RED);
+        AtomicReference<HighlightColor> newerColor = new AtomicReference<>(HighlightColor.GREEN);
+        OrganizerItem older = itemWithMutableColor(
                 3,
                 "GET",
                 "https://example.com/api/users?page=1",
                 "Initial notes",
-                HighlightColor.RED
+                olderColor
         );
-        OrganizerItem newer = item(
+        OrganizerItem newer = itemWithMutableColor(
                 8,
                 "GET",
                 "https://example.com/api/users?page=2",
                 "Tested successfully",
-                HighlightColor.GREEN
+                newerColor
         );
 
         Map<EndpointKey, EndpointAnnotation> snapshot =
-                OrganizerSynchronizer.buildSnapshot(List.of(newer, older));
+                OrganizerSynchronizer.buildSnapshot(List.of(older, newer));
 
         assertEquals(
                 new EndpointAnnotation("Tested successfully", HighlightColor.GREEN, 8),
                 snapshot.get(EndpointKey.from("GET", "https://example.com/api/users"))
         );
+        assertEquals(HighlightColor.PINK, olderColor.get());
+        assertEquals(HighlightColor.GREEN, newerColor.get());
     }
 
     @Test
@@ -74,30 +79,44 @@ class OrganizerSynchronizerTest {
             String notes,
             HighlightColor color
     ) {
+        return itemWithMutableColor(id, method, url, notes, new AtomicReference<>(color));
+    }
+
+    private static OrganizerItem itemWithMutableColor(
+            int id,
+            String method,
+            String url,
+            String notes,
+            AtomicReference<HighlightColor> color
+    ) {
         URI uri = URI.create(url);
         boolean secure = "https".equalsIgnoreCase(uri.getScheme());
         int port = uri.getPort() == -1 ? (secure ? 443 : 80) : uri.getPort();
-        HttpService service = proxy(HttpService.class, invocation -> switch (invocation) {
+        HttpService service = proxy(HttpService.class, (invocation, arguments) -> switch (invocation) {
             case "host" -> uri.getHost();
             case "port" -> port;
             case "secure" -> secure;
             default -> null;
         });
-        HttpRequest request = proxy(HttpRequest.class, invocation -> switch (invocation) {
+        HttpRequest request = proxy(HttpRequest.class, (invocation, arguments) -> switch (invocation) {
             case "method" -> method;
             case "url" -> uri.getRawPath();
             case "httpService" -> service;
             case "pathWithoutQuery" -> uri.getRawPath();
             default -> null;
         });
-        Annotations annotations = proxy(Annotations.class, invocation -> switch (invocation) {
+        Annotations annotations = proxy(Annotations.class, (invocation, arguments) -> switch (invocation) {
             case "hasNotes" -> !notes.isBlank();
             case "notes" -> notes;
-            case "hasHighlightColor" -> color != null;
-            case "highlightColor" -> color;
+            case "hasHighlightColor" -> color.get() != null;
+            case "highlightColor" -> color.get();
+            case "setHighlightColor" -> {
+                color.set((HighlightColor) arguments[0]);
+                yield null;
+            }
             default -> null;
         });
-        return proxy(OrganizerItem.class, invocation -> switch (invocation) {
+        return proxy(OrganizerItem.class, (invocation, arguments) -> switch (invocation) {
             case "id" -> id;
             case "request" -> request;
             case "annotations" -> annotations;
@@ -110,12 +129,12 @@ class OrganizerSynchronizerTest {
         return (T) Proxy.newProxyInstance(
                 type.getClassLoader(),
                 new Class<?>[]{type},
-                (proxy, method, arguments) -> result.value(method.getName())
+                (proxy, method, arguments) -> result.value(method.getName(), arguments)
         );
     }
 
     @FunctionalInterface
     private interface MethodResult {
-        Object value(String methodName);
+        Object value(String methodName, Object[] arguments);
     }
 }
