@@ -62,6 +62,7 @@ public final class OrganizerSynchronizer implements AutoCloseable {
 
     static Map<EndpointKey, EndpointAnnotation> buildSnapshot(List<OrganizerItem> items) {
         Map<EndpointKey, EndpointAnnotation> current = new HashMap<>();
+        Map<EndpointKey, OrganizerItem> selectedItems = new HashMap<>();
         for (OrganizerItem item : items) {
             if (!item.annotations().hasNotes()) {
                 continue;
@@ -77,7 +78,17 @@ public final class OrganizerSynchronizer implements AutoCloseable {
                     ? item.annotations().highlightColor()
                     : HighlightColor.GRAY;
             EndpointAnnotation annotation = new EndpointAnnotation(notes, color, item.id());
-            current.merge(key, annotation, OrganizerSynchronizer::newest);
+            EndpointAnnotation selected = current.get(key);
+            if (selected == null) {
+                current.put(key, annotation);
+                selectedItems.put(key, item);
+            } else if (annotation.organizerItemId() > selected.organizerItemId()) {
+                markAsSuperseded(selectedItems.get(key));
+                current.put(key, annotation);
+                selectedItems.put(key, item);
+            } else {
+                markAsSuperseded(item);
+            }
         }
         return Map.copyOf(current);
     }
@@ -95,10 +106,10 @@ public final class OrganizerSynchronizer implements AutoCloseable {
         }
     }
 
-    private static EndpointAnnotation newest(
-            EndpointAnnotation left,
-            EndpointAnnotation right
-    ) {
-        return left.organizerItemId() >= right.organizerItemId() ? left : right;
+    private static void markAsSuperseded(OrganizerItem item) {
+        if (!item.annotations().hasHighlightColor()
+                || item.annotations().highlightColor() != HighlightColor.PINK) {
+            item.annotations().setHighlightColor(HighlightColor.PINK);
+        }
     }
 }
